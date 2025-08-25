@@ -39,14 +39,15 @@ app.add_middleware(
 )
 
 
-# 数据模型定义（核心调整：统一参数结构）
+# 数据模型定义
 class DegradationConfig(BaseModel):
-    """单个退化阶段的标准配置模型"""
+    """前端的请求的通用参数结构"""
     name: str = Field(..., description="退化类型（如'composite'或具体退化类型）")
     params: Dict = Field(..., description="退化参数字典")
 
 
 class SingleDegradationRequest(BaseModel):
+    """前端传来的单个退化请求参数结构"""
     media_path: str  # file目录下的相对路径
     media_type: str  # "image" 或 "video"
     degradation_type: str
@@ -54,7 +55,7 @@ class SingleDegradationRequest(BaseModel):
 
 
 class CompositeDegradationRequest(BaseModel):
-    """复合退化请求模型（与前端参数结构完全匹配）"""
+    """前端传来的复合退化请求参数结构"""
     media_path: str
     media_type: str
     first_config: DegradationConfig  # 第一阶段配置
@@ -135,7 +136,7 @@ async def upload_file(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-# 复合降质处理接口（核心调整：匹配前端参数结构）
+# 复合降质处理接口
 @app.post("/api/composite-degradation")
 async def process_composite_degradation(request: CompositeDegradationRequest):
     try:
