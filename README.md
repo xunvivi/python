@@ -44,14 +44,14 @@ python/
 
 #### base_degradation.py
 - **功能**：定义所有退化处理类的基类，提供统一接口规范
-- **核心内容**：
+- **核心函数**：
   - 抽象基类 `BaseDegradation`，包含抽象方法 `apply()`（所有退化处理必须实现）
   - 通用参数验证方法 `validate_params()`（被子类继承）
   - 退化处理元数据管理（如支持的媒体类型、参数范围等）
 
 #### composite_degradation.py
 - **功能**：提供复合退化处理的基础支持，扩展 `DegradationPipeline` 的底层实现
-- **核心内容**：
+- **核心函数**：
   - 复合退化组合逻辑
   - 退化处理顺序优化算法
   - 处理结果缓存机制
@@ -85,6 +85,195 @@ python/
 ### 5. config/ 目录 - 配置文件
 
 存放系统配置参数，包括默认退化参数、路径配置等。
+
+### 6. app.py
+以下是各接口的前端请求参数格式及后端返回结果格式说明，基于提供的代码实现：
+
+## 1. 单个降质处理接口 `/api/single-degradation`
+
+### 前端请求参数
+- **请求方式**：`POST`
+- **Content-Type**：`application/json`
+- **参数结构**：
+  ```json
+  {
+    "media_path": "example.jpg",  // 必选，媒体文件在file目录下的相对路径
+    "media_type": "image",        // 必选，媒体类型，只能是"image"或"video"
+    "degradation_type": "blur",   // 必选，退化类型（参考DEGRADATION_CLASSES）
+    "params": {                   // 可选，退化参数（根据类型动态变化）
+      "kernel_size": 5,
+      "sigma": 1.0
+    }
+  }
+  ```
+
+### 后端返回格式
+```json
+{
+  "status": "success",
+  "data": {
+    "original_path": "/absolute/path/to/example.jpg",  // 原始文件绝对路径
+    "processed_path": "/absolute/path/to/processed/example_blur.jpg",  // 处理后文件路径
+    "degradation_types": ["blur"],  // 应用的退化类型
+    "original_size": 123456,        // 原始文件大小（字节）
+    "processed_size": 78901         // 处理后文件大小（字节）
+  }
+}
+```
+
+
+## 2. 文件上传接口 `/api/upload`
+### 前端请求参数
+- **请求方式**：`POST`
+- **Content-Type**：`multipart/form-data`
+- **参数结构**：
+  - 表单字段：`file`（必选，二进制文件流，支持图片/视频）
+
+### 后端返回格式
+```json
+{
+  "status": "success",
+  "data": {
+    "file_path": "example.mp4",    // 上传后在file目录下的相对路径
+    "file_name": "example.mp4",    // 原始文件名
+    "content_type": "video/mp4"    // 文件MIME类型
+  }
+}
+```
+
+
+## 3. 复合降质处理接口 `/api/composite-degradation`
+### 前端请求参数
+- **请求方式**：`POST`
+- **Content-Type**：`application/json`
+- **参数结构**：
+  ```json
+  {
+    "media_path": "example.png",
+    "media_type": "image",
+    "first_config": {
+      "name": "noise",
+      "params": {"noise_type": "gaussian", "intensity": 0.2}
+    },
+    "second_config": {
+      "name": "compression",
+      "params": {"quality": 50, "format": "jpeg"}
+    },
+    "third_config": {  // 可选
+      "name": "blur",
+      "params": {"kernel_size": 3}
+    }
+  }
+  ```
+
+### 后端返回格式
+```json
+{
+  "status": "success",
+  "data": {
+    "original_path": "/absolute/path/to/example.png",
+    "processed_path": "/absolute/path/to/processed/example_composite.jpg",
+    "degradation_types": ["noise", "compression", "blur"],  // 按顺序的退化类型
+    "status": "success"
+  }
+}
+```
+
+
+## 4. 获取媒体信息接口 `/api/media-info`
+### 前端请求参数
+- **请求方式**：`POST`
+- **Content-Type**：`application/json`
+- **参数结构**：
+  ```json
+  {
+    "file_path": "example.mp4"  // 必选，file目录下的相对路径
+  }
+  ```
+
+### 后端返回格式
+```json
+{
+  "width": 1920,           // 宽度（像素）
+  "height": 1080,          // 高度（像素）
+  "format": "mp4",         // 文件格式
+  "duration": 120.5,       // 时长（秒，视频）
+  "fps": 30.0,             // 帧率（视频）
+  "video_codec": "h264",   // 视频编码器
+  "audio_codec": "aac",    // 音频编码器（视频）
+  "bitrate": 2500000,      // 比特率（bps）
+  "color_space": "yuv420p",// 色彩空间
+  "bit_depth": 8,          // 位深
+  "file_size": 37500000,   // 文件大小（字节）
+  "file_size_human": "36.0MB",  // 人类可读大小
+  "file_path": "example.mp4"
+}
+```
+
+
+## 5. 获取文件接口 `/api/file`
+### 前端请求参数
+- **请求方式**：`GET`
+- **查询参数**：`path`（必选，file目录下的相对路径，如`"processed/example.jpg"`）
+
+### 后端返回格式
+- 返回文件二进制流（`application/octet-stream`），浏览器可直接下载或预览。
+
+
+## 6. 获取文件列表接口 `/api/file-list`
+### 前端请求参数
+- **请求方式**：`POST`
+- **Content-Type**：`application/json`
+- **参数结构**：
+  ```json
+  {
+    "subdir": "processed"  // 可选，子目录名，默认为根目录
+  }
+  ```
+
+### 后端返回格式
+```json
+{
+  "status": "success",
+  "data": {
+    "current_dir": "processed",  // 当前目录
+    "parent_dir": "",            // 父目录（空表示根目录）
+    "files": [
+      {
+        "name": "example_blur.jpg",
+        "path": "processed/example_blur.jpg",  // 相对路径
+        "type": "image",                       // 类型（image/video）
+        "size": 123456,                        // 大小（字节）
+        "size_human": "120KB",                 // 人类可读大小
+        "modified": 1690000000.0               // 最后修改时间（时间戳）
+      },
+      // ...更多文件
+    ]
+  }
+}
+```
+
+
+## 7. 删除文件接口 `/api/files/delete`
+### 前端请求参数
+- **请求方式**：`POST`
+- **Content-Type**：`application/json`
+- **参数结构**：
+  ```json
+  {
+    "file_path": "processed/example.jpg"  // 必选，file目录下的相对路径
+  }
+  ```
+
+### 后端返回格式
+```json
+{
+  "status": "success",
+  "message": "文件已删除: processed/example.jpg"
+}
+```
+
+
 
 ## 核心模块关系说明
 
