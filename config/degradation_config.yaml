@@ -1,0 +1,15 @@
+FILE_ROOT: "./media"  # 媒体文件根目录
+SUPPORTED_IMAGE_EXT: [".jpg", ".jpeg", ".png", ".bmp"]
+SUPPORTED_VIDEO_EXT: [".mp4", ".avi", ".mov", ".mkv"]
+DEGRADATION_TYPES:
+  image:
+    common: [blur, resample, noise, compression]
+    advanced: [scratch, dirt, aliasing, interlace, edge_artifact]
+  video:
+    common: [blur, resample, noise, compression]
+    advanced: [flicker, shake, motion_blur]
+STAGE1_DEGRADATIONS: [blur, resample, noise, compression]
+STAGE2_DEGRADATIONS: [blur, resample, noise, compression]
+STAGE3_DEGRADATIONS:
+  image: [scratch, dirt, aliasing]
+  video: [flicker, shake, motion_blur]
