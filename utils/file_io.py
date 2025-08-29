@@ -219,7 +219,8 @@ def get_media_info(file_path) -> Optional[Dict]:
 
         # 初始化媒体信息字典
         media_info = {
-            "file_path": os.path.relpath(full_path, FILE_ROOT) if full_path.startswith(FILE_ROOT) else os.path.relpath(full_path, os.path.dirname(FILE_ROOT)),  # 相对路径（供前端显示）
+            "file_path": os.path.relpath(full_path, FILE_ROOT) if full_path.startswith(FILE_ROOT) else os.path.relpath(
+                full_path, os.path.dirname(FILE_ROOT)),  # 相对路径（供前端显示）
             "full_path": full_path,
             "file_size": file_size,
             "file_size_human": file_size_human,
@@ -236,22 +237,32 @@ def get_media_info(file_path) -> Optional[Dict]:
 
         # 调用ffprobe获取详细信息（核心修复）
         try:
+            # 修复：使用更详细的 ffprobe 命令
             result = subprocess.run(
                 [
-                    "ffprobe", "-v", "error",
-                    "-show_entries", "stream=width,height,r_frame_rate,duration,codec_name,bit_rate,pix_fmt,bits_per_raw_sample,sample_rate,channels:format=duration",
-                    "-of", "json",
+                    "ffprobe", "-v", "quiet", "-print_format", "json",
+                    "-show_format", "-show_streams",
                     full_path
                 ],
-                capture_output=True, text=True, check=True, timeout=10
+                capture_output=True, text=True, check=True, timeout=15
             )
+
+            if result.returncode != 0:
+                raise subprocess.CalledProcessError(result.returncode, "ffprobe")
+
             ffprobe_data = json.loads(result.stdout)
             streams = ffprobe_data.get("streams", [])
             format_data = ffprobe_data.get("format", {})
 
+            print(f"DEBUG: ffprobe原始数据 - streams数量: {len(streams)}")
+            if streams:
+                print(f"DEBUG: 第一个流信息: {streams[0]}")
+
             # 解析视频/音频流信息
             for stream in streams:
                 codec_type = stream.get("codec_type")
+                print(f"DEBUG: 处理流类型: {codec_type}")
+
                 if codec_type == "video":
                     # 视频基础信息
                     media_info["width"] = stream.get("width")
@@ -260,41 +271,82 @@ def get_media_info(file_path) -> Optional[Dict]:
                     media_info["color_space"] = stream.get("pix_fmt")
 
                     # 帧率（处理分数形式，如29/1 → 29.0）
-                    if "r_frame_rate" in stream:
-                        rate_str = stream["r_frame_rate"]
+                    if "r_frame_rate" in stream and stream["r_frame_rate"]:
+                        rate_str = str(stream["r_frame_rate"])
                         if "/" in rate_str:
-                            num, den = map(int, rate_str.split("/"))
-                            media_info["fps"] = round(num / den, 2) if den != 0 else None
+                            try:
+                                num, den = rate_str.split("/")
+                                num, den = int(num), int(den)
+                                if den != 0:
+                                    media_info["fps"] = round(num / den, 2)
+                            except (ValueError, ZeroDivisionError):
+                                pass
 
-                    # 视频比特率（转整数）
-                    if "bit_rate" in stream:
-                        media_info["video_bitrate"] = int(stream["bit_rate"]) if stream["bit_rate"].isdigit() else None
+                    # 视频比特率
+                    if "bit_rate" in stream and stream["bit_rate"]:
+                        try:
+                            media_info["video_bitrate"] = int(float(stream["bit_rate"]))
+                        except (ValueError, TypeError):
+                            pass
 
-                    # 位深（优先取bits_per_raw_sample，其次通过pix_fmt推断）
-                    media_info["bit_depth"] = stream.get("bits_per_raw_sample")
-                    if media_info["bit_depth"] is None and "pix_fmt" in stream:
-                        pix_fmt = stream["pix_fmt"]
+                    # 位深处理
+                    if "bits_per_raw_sample" in stream and stream["bits_per_raw_sample"]:
+                        try:
+                            media_info["bit_depth"] = int(stream["bits_per_raw_sample"])
+                        except (ValueError, TypeError):
+                            pass
+
+                    # 如果没有位深信息，尝试从像素格式推断
+                    if media_info["bit_depth"] is None and media_info["color_space"]:
+                        pix_fmt = media_info["color_space"]
                         depth_map = {
-                            'yuv420p': 8, 'nv12': 8, 'yuv422p': 8,
-                            'yuv420p10le': 10, 'p010le': 10, 'yuv444p12le': 12
+                            'yuv420p': 8, 'nv12': 8, 'yuv422p': 8, 'yuvj420p': 8,
+                            'yuv420p10le': 10, 'p010le': 10, 'yuv444p12le': 12,
+                            'rgb24': 8, 'rgba': 8, 'bgr24': 8, 'bgra': 8
                         }
                         media_info["bit_depth"] = depth_map.get(pix_fmt)
 
                 elif codec_type == "audio":
                     # 音频信息
                     media_info["audio_codec"] = stream.get("codec_long_name") or stream.get("codec_name")
-                    media_info["sample_rate"] = stream.get("sample_rate")
-                    media_info["channels"] = stream.get("channels")
-                    if "bit_rate" in stream:
-                        media_info["audio_bitrate"] = int(stream["bit_rate"]) if stream["bit_rate"].isdigit() else None
 
-            # 时长（优先取format的duration，其次取视频流的duration）
-            if "duration" in format_data:
-                media_info["duration"] = round(float(format_data["duration"]), 2)
-            else:
+                    if "sample_rate" in stream and stream["sample_rate"]:
+                        try:
+                            media_info["sample_rate"] = int(stream["sample_rate"])
+                        except (ValueError, TypeError):
+                            pass
+
+                    if "channels" in stream and stream["channels"]:
+                        try:
+                            media_info["channels"] = int(stream["channels"])
+                        except (ValueError, TypeError):
+                            pass
+
+                    if "bit_rate" in stream and stream["bit_rate"]:
+                        try:
+                            media_info["audio_bitrate"] = int(float(stream["bit_rate"]))
+                        except (ValueError, TypeError):
+                            pass
+
+            # 时长处理（优先使用format的duration）
+            duration = None
+            if format_data.get("duration"):
+                try:
+                    duration = round(float(format_data["duration"]), 2)
+                except (ValueError, TypeError):
+                    pass
+
+            # 如果format没有duration，尝试从视频流获取
+            if duration is None:
                 video_stream = next((s for s in streams if s.get("codec_type") == "video"), None)
-                if video_stream and "duration" in video_stream:
-                    media_info["duration"] = round(float(video_stream["duration"]), 2)
+                if video_stream and video_stream.get("duration"):
+                    try:
+                        duration = round(float(video_stream["duration"]), 2)
+                    except (ValueError, TypeError):
+                        pass
+
+            if duration is not None:
+                media_info["duration"] = duration
 
         except subprocess.TimeoutExpired:
             media_info["warning"] = "ffprobe超时，未能获取完整信息"
@@ -392,7 +444,7 @@ def get_media_path(file_path) -> str:
 
 
 def get_file_url(file_path, base_url="/static/files") -> Optional[str]:
-    """获取文件的URL路径（复用你原始代码，无需修改）"""
+    """获取文件的URL路径"""
     try:
         if not file_path:
             return None

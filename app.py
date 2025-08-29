@@ -24,7 +24,8 @@ from utils.file_io import (
     get_media_path,
     MEDIA_ROOT,
     get_file_size,
-    generate_output_filename
+    generate_output_filename,
+    get_media_info as file_get_media_info  # 重命名导入避免冲突
 )
 
 app = FastAPI(title="图像/视频降质可视化系统")
@@ -180,15 +181,16 @@ async def process_composite_degradation(request: CompositeDegradationRequest):
 
 
 @app.post("/api/media-info")
-async def get_media_info(request: dict):
+async def get_media_info_endpoint(request: dict):
+    """获取媒体文件信息 - 重命名函数避免与导入的函数冲突"""
     try:
         file_path = request.get("file_path")
         if not file_path:
             raise ValueError("未提供file目录下的文件路径")
 
         logger.info(f"获取媒体信息: {file_path}")
-        # 直接调用file_io中的get_media_info函数（已包含路径验证和ffprobe解析）
-        media_info = get_media_info(file_path)
+        # 调用重命名后的导入函数
+        media_info = file_get_media_info(file_path)  # 不使用 await，因为是同步函数
         if not media_info:
             raise ValueError(f"无法获取{file_path}的媒体信息")
 
