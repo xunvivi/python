@@ -179,7 +179,6 @@ async def process_composite_degradation(request: CompositeDegradationRequest):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-# 获取媒体文件信息接口
 @app.post("/api/media-info")
 async def get_media_info(request: dict):
     try:
@@ -188,59 +187,16 @@ async def get_media_info(request: dict):
             raise ValueError("未提供file目录下的文件路径")
 
         logger.info(f"获取媒体信息: {file_path}")
-        full_path = get_media_path(file_path)
-        size_bytes, size_human = get_file_size(full_path)
+        # 直接调用file_io中的get_media_info函数（已包含路径验证和ffprobe解析）
+        media_info = get_media_info(file_path)
+        if not media_info:
+            raise ValueError(f"无法获取{file_path}的媒体信息")
 
-        # 使用ffprobe获取详细信息
-        try:
-            result = subprocess.run(
-                [
-                    "ffprobe", "-v", "error",
-                    "-show_entries", "stream=width,height,r_frame_rate,duration,codec_name,bit_rate,pix_fmt",
-                    "-show_format", "-of", "json", str(full_path)
-                ],
-                capture_output=True, text=True, check=True
-            )
-            ffprobe_data = json.loads(result.stdout)
+        return media_info
 
-            media_info = {
-                "width": None, "height": None, "format": ffprobe_data.get("format", {}).get("format_name", ""),
-                "duration": None, "fps": None, "video_codec": None, "audio_codec": None,
-                "bitrate": None, "color_space": None, "bit_depth": None,
-                "file_size": size_bytes, "file_size_human": size_human, "file_path": file_path
-            }
-
-            # 解析流信息
-            for stream in ffprobe_data.get("streams", []):
-                if stream.get("codec_type") == "video":
-                    media_info["width"] = stream.get("width")
-                    media_info["height"] = stream.get("height")
-                    media_info["video_codec"] = stream.get("codec_name")
-                    if "r_frame_rate" in stream:
-                        num, den = map(int, stream["r_frame_rate"].split('/'))
-                        media_info["fps"] = round(num / den, 2) if den else None
-                    if "pix_fmt" in stream:
-                        media_info["color_space"] = stream["pix_fmt"]
-                        media_info["bit_depth"] = 10 if '10' in stream["pix_fmt"] else 8
-                elif stream.get("codec_type") == "audio":
-                    media_info["audio_codec"] = stream.get("codec_name")
-                if not media_info["bitrate"] and "bit_rate" in stream:
-                    media_info["bitrate"] = int(stream["bit_rate"])
-
-            media_info["duration"] = round(float(ffprobe_data["format"]["duration"]),
-                                           2) if "duration" in ffprobe_data.get("format", {}) else None
-            return media_info
-
-        except Exception as e:
-            logger.warning(f"ffprobe获取信息失败: {str(e)}")
-            return {
-                "width": None, "height": None,
-                "format": os.path.splitext(full_path)[1].lower().lstrip('.'),
-                "file_size": size_bytes, "file_size_human": size_human,
-                "file_path": file_path,
-                "warning": "无法获取详细媒体信息，请确保已安装ffmpeg"
-            }
-
+    except FileNotFoundError as e:
+        logger.error(f"文件不存在: {str(e)}")
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         logger.error(f"获取媒体信息失败: {str(e)}", exc_info=True)
         raise HTTPException(status_code=400, detail=str(e))

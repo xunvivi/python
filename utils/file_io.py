@@ -1,62 +1,48 @@
 import os
 import uuid
 import mimetypes
+import subprocess
+import json
 from datetime import datetime
 from pathlib import Path
+from typing import Tuple, Optional, List, Dict
 
-# 支持的文件扩展名（在函数定义前先定义）
+# 支持的文件扩展名（复用你原始的配置）
 IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.bmp', '.gif', '.tiff', '.webp'}
 VIDEO_EXTENSIONS = {'.mp4', '.avi', '.mov', '.mkv', '.flv', '.wmv', '.mpeg', '.mpg', '.webm'}
 
-# 配置目录
+# 配置目录（保持你原始的路径结构，添加Path类型兼容）
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 FILE_ROOT = os.path.join(os.path.dirname(BASE_DIR), 'file')  # 项目根目录下的file文件夹
 PROCESSED_DIR = os.path.join(FILE_ROOT, 'processed')
 UPLOAD_DIR = FILE_ROOT
 
-# 为了兼容app.py，添加MEDIA_ROOT别名
-MEDIA_ROOT = Path(FILE_ROOT)
+# 为了兼容app.py的Path类型调用，同时保留字符串格式（关键适配）
+MEDIA_ROOT = Path(FILE_ROOT)  # 供app.py中Path类型使用
+MEDIA_ROOT_STR = FILE_ROOT    # 供字符串格式路径使用
 
-# 确保必要目录存在
+# 确保必要目录存在（复用你原始的创建逻辑）
 os.makedirs(FILE_ROOT, exist_ok=True)
 os.makedirs(PROCESSED_DIR, exist_ok=True)
 
 
 def save_uploaded_file(file, upload_dir=UPLOAD_DIR):
-    """
-    保存上传的文件到指定目录
-
-    Args:
-        file: 上传的文件对象（Flask FileStorage对象）
-        upload_dir: 上传目录路径，默认为UPLOAD_DIR
-
-    Returns:
-        str: 保存的文件完整路径
-
-    Raises:
-        Exception: 保存文件失败时抛出异常
-    """
+    """保存上传的文件到指定目录（复用你原始代码，无需修改）"""
     try:
-        # 检查文件对象是否有效
         if not file or not hasattr(file, 'filename') or not file.filename:
             raise ValueError("无效的文件对象或文件名为空")
 
-        # 确保上传目录存在
         os.makedirs(upload_dir, exist_ok=True)
 
-        # 生成唯一文件名，避免冲突
         timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
         file_ext = os.path.splitext(file.filename)[1].lower()
 
-        # 验证文件扩展名
         if file_ext not in IMAGE_EXTENSIONS and file_ext not in VIDEO_EXTENSIONS:
             raise ValueError(f"不支持的文件类型: {file_ext}")
 
         unique_filename = f"{timestamp}_{uuid.uuid4().hex[:8]}{file_ext}"
-
-        # 保存文件
         file_path = os.path.join(upload_dir, unique_filename)
-        file.save(file_path)  # 适用于Flask的FileStorage对象
+        file.save(file_path)
 
         return file_path
     except Exception as e:
@@ -65,32 +51,16 @@ def save_uploaded_file(file, upload_dir=UPLOAD_DIR):
 
 
 def generate_output_filename(input_path, degradation_type, output_dir=PROCESSED_DIR):
-    """
-    生成处理后的输出文件名
-
-    Args:
-        input_path: 输入文件路径
-        degradation_type: 处理类型标识
-        output_dir: 输出目录路径，默认为PROCESSED_DIR
-
-    Returns:
-        str: 输出文件的完整路径
-
-    Raises:
-        Exception: 生成文件名失败时抛出异常
-    """
+    """生成处理后的输出文件名（复用你原始代码，无需修改）"""
     try:
-        # 确保输出目录存在
         os.makedirs(output_dir, exist_ok=True)
 
-        # 检查输入路径是否有效
         if not input_path or not os.path.exists(input_path):
             raise ValueError("输入文件路径无效或文件不存在")
 
         filename = os.path.basename(input_path)
         name, ext = os.path.splitext(filename)
 
-        # 验证处理类型参数
         if not degradation_type or not isinstance(degradation_type, str):
             raise ValueError("处理类型参数无效")
 
@@ -102,23 +72,12 @@ def generate_output_filename(input_path, degradation_type, output_dir=PROCESSED_
         raise
 
 
-def validate_media_type(file_path, expected_type=None):
-    """
-    验证文件是否为支持的媒体类型（图片或视频）
-
-    Args:
-        file_path: 文件路径
-        expected_type: 期望的媒体类型 ('image', 'video') 或 None
-
-    Returns:
-        如果提供了 expected_type:
-            bool: 文件是否为期望的媒体类型
-        如果没有提供 expected_type:
-            tuple: (是否有效, 媒体类型)
-                   - 是否有效: bool
-                   - 媒体类型: 'image', 'video' 或 None
-    """
+def validate_media_type(file_path, expected_type=None) -> bool | Tuple[bool, Optional[str]]:
+    """验证文件是否为支持的媒体类型（修复路径兼容，支持Path类型）"""
     try:
+        # 兼容Path对象和字符串路径
+        if isinstance(file_path, Path):
+            file_path = str(file_path)
         if not file_path or not isinstance(file_path, str):
             return (False, None) if expected_type is None else False
 
@@ -132,33 +91,21 @@ def validate_media_type(file_path, expected_type=None):
         else:
             return (False, None) if expected_type is None else False
 
-        # 如果指定了期望类型，则返回是否匹配
         if expected_type is not None:
             return media_type == expected_type
 
-        # 否则返回元组
         return (True, media_type)
-
     except Exception as e:
         print(f"验证媒体类型失败: {str(e)}")
         return (False, None) if expected_type is None else False
 
 
-def get_file_size(file_path):
-    """
-    获取文件大小（字节和人类可读格式）
-
-    Args:
-        file_path: 文件路径
-
-    Returns:
-        tuple: (字节大小, 人类可读格式)
-
-    Raises:
-        FileNotFoundError: 文件不存在
-        Exception: 其他错误
-    """
+def get_file_size(file_path) -> Tuple[int, str]:
+    """获取文件大小（修复Path类型兼容，统一返回格式）"""
     try:
+        # 兼容Path对象和字符串路径
+        if isinstance(file_path, Path):
+            file_path = str(file_path)
         if not file_path or not os.path.exists(file_path):
             raise FileNotFoundError(f"文件不存在: {file_path}")
 
@@ -166,7 +113,6 @@ def get_file_size(file_path):
         size_human = format_file_size(size_bytes)
 
         return size_bytes, size_human
-
     except FileNotFoundError:
         raise
     except Exception as e:
@@ -174,19 +120,8 @@ def get_file_size(file_path):
         raise
 
 
-def get_file_list(subdir=''):
-    """
-    获取指定目录下的文件列表
-
-    Args:
-        subdir: 子目录路径，相对于FILE_ROOT
-
-    Returns:
-        tuple: (文件列表, 当前目录, 父目录)
-               - 文件列表: list，包含文件信息的字典列表
-               - 当前目录: str
-               - 父目录: str
-    """
+def get_file_list(subdir='') -> Tuple[List[Dict], str, str]:
+    """获取指定目录下的文件列表（复用你原始代码，无需修改）"""
     try:
         target_dir = os.path.join(FILE_ROOT, subdir)
         if not os.path.exists(target_dir):
@@ -195,16 +130,10 @@ def get_file_list(subdir=''):
         files = []
         for entry in os.scandir(target_dir):
             if entry.is_file():
-                # 获取文件类型
                 file_ext = os.path.splitext(entry.name)[1].lower()
-
-                # 使用已定义的扩展名集合
                 all_extensions = IMAGE_EXTENSIONS | VIDEO_EXTENSIONS
                 if file_ext in all_extensions:
-                    # 判断是图片还是视频
                     _, file_type = validate_media_type(entry.name)
-
-                    # 获取文件大小（人类可读格式）
                     size = entry.stat().st_size
                     size_human = format_file_size(size)
 
@@ -217,10 +146,7 @@ def get_file_list(subdir=''):
                         'modified': datetime.fromtimestamp(entry.stat().st_mtime).strftime('%Y-%m-%d %H:%M')
                     })
 
-        # 按修改时间降序排序
         files.sort(key=lambda x: x['modified'], reverse=True)
-
-        # 获取父目录
         parent_dir = os.path.dirname(subdir) if subdir else ''
 
         return files, subdir, parent_dir
@@ -229,16 +155,8 @@ def get_file_list(subdir=''):
         return [], subdir, ''
 
 
-def format_file_size(size_bytes):
-    """
-    将字节数转换为人类可读的文件大小格式
-
-    Args:
-        size_bytes: 文件大小（字节）
-
-    Returns:
-        str: 格式化后的文件大小字符串
-    """
+def format_file_size(size_bytes) -> str:
+    """将字节数转换为人类可读的文件大小格式（复用你原始代码，无需修改）"""
     try:
         if size_bytes == 0:
             return "0 B"
@@ -254,26 +172,13 @@ def format_file_size(size_bytes):
         return "未知大小"
 
 
-def delete_file(file_path):
-    """
-    删除指定文件
-
-    Args:
-        file_path: 相对于FILE_ROOT的文件路径
-
-    Returns:
-        bool: 删除成功返回True，失败返回False
-
-    Raises:
-        Exception: 删除文件时发生严重错误
-    """
+def delete_file(file_path) -> bool:
+    """删除指定文件（复用你原始代码，无需修改）"""
     try:
         if not file_path:
             return False
 
         full_path = os.path.join(FILE_ROOT, file_path)
-
-        # 安全检查：确保路径在FILE_ROOT内
         real_file_path = os.path.realpath(full_path)
         real_file_root = os.path.realpath(FILE_ROOT)
 
@@ -290,95 +195,122 @@ def delete_file(file_path):
         raise
 
 
-def get_media_info(file_path):
+def get_media_info(file_path) -> Optional[Dict]:
     """
-    获取媒体文件的基本信息
-
-    Args:
-        file_path: 相对于FILE_ROOT的文件路径
-
-    Returns:
-        dict: 包含媒体信息的字典，失败时返回None
+    修复：基于ffprobe获取真实媒体信息（替换你原始的模拟数据）
+    用于/api/media-info接口，返回完整的宽高、编码、帧率等信息
+    注意：这是一个同步函数，不要使用async/await
     """
     try:
+        # 兼容Path对象和字符串路径，获取绝对路径
+        if isinstance(file_path, Path):
+            file_path = str(file_path)
         if not file_path:
             return None
 
-        full_path = os.path.join(FILE_ROOT, file_path)
-        if not os.path.exists(full_path):
-            return None
-
-        # 验证媒体类型
+        # 先获取基础信息（复用你原始的基础逻辑）
+        full_path = get_media_path(file_path)  # 调用get_media_path确保路径有效
         is_valid, media_type = validate_media_type(full_path)
         if not is_valid:
             return None
 
-        # 获取文件大小
-        file_size = os.path.getsize(full_path)
+        file_size, file_size_human = get_file_size(full_path)
+        file_ext = os.path.splitext(full_path)[1].lower()[1:]  # 扩展名（不带点）
 
-        # 基础信息
-        info = {
-            'path': file_path,
-            'full_path': full_path,
-            'file_size': file_size,
-            'file_size_human': format_file_size(file_size),
-            'media_type': media_type,
-            'format': os.path.splitext(full_path)[1].lower()[1:],  # 扩展名（不带点）
-            'created_time': datetime.fromtimestamp(os.path.getctime(full_path)).strftime('%Y-%m-%d %H:%M:%S'),
-            'modified_time': datetime.fromtimestamp(os.path.getmtime(full_path)).strftime('%Y-%m-%d %H:%M:%S')
+        # 初始化媒体信息字典
+        media_info = {
+            "file_path": os.path.relpath(full_path, FILE_ROOT) if full_path.startswith(FILE_ROOT) else os.path.relpath(full_path, os.path.dirname(FILE_ROOT)),  # 相对路径（供前端显示）
+            "full_path": full_path,
+            "file_size": file_size,
+            "file_size_human": file_size_human,
+            "media_type": media_type,
+            "format": file_ext,
+            "created_time": datetime.fromtimestamp(os.path.getctime(full_path)).strftime('%Y-%m-%d %H:%M:%S'),
+            "modified_time": datetime.fromtimestamp(os.path.getmtime(full_path)).strftime('%Y-%m-%d %H:%M:%S'),
+            # 待填充的ffprobe信息
+            "width": None, "height": None, "video_codec": None,
+            "fps": None, "duration": None, "video_bitrate": None,
+            "audio_codec": None, "sample_rate": None, "channels": None,
+            "color_space": None, "bit_depth": None, "warning": None
         }
 
-        # 尝试获取更多媒体信息
-        # 注意：这里是模拟数据，实际项目中需要使用PIL（图片）或ffprobe（视频）
+        # 调用ffprobe获取详细信息（核心修复）
         try:
-            if media_type == 'image':
-                # 实际项目中应使用PIL获取真实图片信息
-                # from PIL import Image
-                # with Image.open(full_path) as img:
-                #     info.update({
-                #         'width': img.width,
-                #         'height': img.height,
-                #         'mode': img.mode
-                #     })
-                info.update({
-                    'width': 1920,  # 模拟数据
-                    'height': 1080,
-                    'color_space': 'RGB',
-                    'bit_depth': 24
-                })
-            elif media_type == 'video':
-                # 实际项目中应使用ffprobe获取真实视频信息
-                # import subprocess
-                # result = subprocess.run(['ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_format', '-show_streams', full_path], capture_output=True, text=True)
-                info.update({
-                    'width': 1920,  # 模拟数据
-                    'height': 1080,
-                    'duration': 10.5,
-                    'fps': 30.0,
-                    'video_codec': 'H.264',
-                    'audio_codec': 'AAC',
-                    'bitrate': 5000000  # 5 Mbps
-                })
-        except Exception as e:
-            print(f"获取详细媒体信息失败: {str(e)}")
-            # 获取详细信息失败时保留基础信息
+            result = subprocess.run(
+                [
+                    "ffprobe", "-v", "error",
+                    "-show_entries", "stream=width,height,r_frame_rate,duration,codec_name,bit_rate,pix_fmt,bits_per_raw_sample,sample_rate,channels:format=duration",
+                    "-of", "json",
+                    full_path
+                ],
+                capture_output=True, text=True, check=True, timeout=10
+            )
+            ffprobe_data = json.loads(result.stdout)
+            streams = ffprobe_data.get("streams", [])
+            format_data = ffprobe_data.get("format", {})
 
-        return info
+            # 解析视频/音频流信息
+            for stream in streams:
+                codec_type = stream.get("codec_type")
+                if codec_type == "video":
+                    # 视频基础信息
+                    media_info["width"] = stream.get("width")
+                    media_info["height"] = stream.get("height")
+                    media_info["video_codec"] = stream.get("codec_long_name") or stream.get("codec_name")
+                    media_info["color_space"] = stream.get("pix_fmt")
+
+                    # 帧率（处理分数形式，如29/1 → 29.0）
+                    if "r_frame_rate" in stream:
+                        rate_str = stream["r_frame_rate"]
+                        if "/" in rate_str:
+                            num, den = map(int, rate_str.split("/"))
+                            media_info["fps"] = round(num / den, 2) if den != 0 else None
+
+                    # 视频比特率（转整数）
+                    if "bit_rate" in stream:
+                        media_info["video_bitrate"] = int(stream["bit_rate"]) if stream["bit_rate"].isdigit() else None
+
+                    # 位深（优先取bits_per_raw_sample，其次通过pix_fmt推断）
+                    media_info["bit_depth"] = stream.get("bits_per_raw_sample")
+                    if media_info["bit_depth"] is None and "pix_fmt" in stream:
+                        pix_fmt = stream["pix_fmt"]
+                        depth_map = {
+                            'yuv420p': 8, 'nv12': 8, 'yuv422p': 8,
+                            'yuv420p10le': 10, 'p010le': 10, 'yuv444p12le': 12
+                        }
+                        media_info["bit_depth"] = depth_map.get(pix_fmt)
+
+                elif codec_type == "audio":
+                    # 音频信息
+                    media_info["audio_codec"] = stream.get("codec_long_name") or stream.get("codec_name")
+                    media_info["sample_rate"] = stream.get("sample_rate")
+                    media_info["channels"] = stream.get("channels")
+                    if "bit_rate" in stream:
+                        media_info["audio_bitrate"] = int(stream["bit_rate"]) if stream["bit_rate"].isdigit() else None
+
+            # 时长（优先取format的duration，其次取视频流的duration）
+            if "duration" in format_data:
+                media_info["duration"] = round(float(format_data["duration"]), 2)
+            else:
+                video_stream = next((s for s in streams if s.get("codec_type") == "video"), None)
+                if video_stream and "duration" in video_stream:
+                    media_info["duration"] = round(float(video_stream["duration"]), 2)
+
+        except subprocess.TimeoutExpired:
+            media_info["warning"] = "ffprobe超时，未能获取完整信息"
+            print(f"ffprobe超时: {full_path}")
+        except Exception as e:
+            media_info["warning"] = f"ffprobe解析失败: {str(e)}"
+            print(f"ffprobe获取信息失败: {str(e)}")
+
+        return media_info
     except Exception as e:
         print(f"获取媒体信息失败: {str(e)}")
         return None
 
 
-def get_directory_size(directory_path):
-    """
-    计算目录总大小
-
-    Args:
-        directory_path: 目录路径
-
-    Returns:
-        int: 目录大小（字节）
-    """
+def get_directory_size(directory_path) -> int:
+    """计算目录总大小（复用你原始代码，无需修改）"""
     try:
         total_size = 0
         for dirpath, dirnames, filenames in os.walk(directory_path):
@@ -387,7 +319,6 @@ def get_directory_size(directory_path):
                 try:
                     total_size += os.path.getsize(file_path)
                 except (OSError, IOError):
-                    # 跳过无法访问的文件
                     continue
         return total_size
     except Exception as e:
@@ -395,50 +326,64 @@ def get_directory_size(directory_path):
         return 0
 
 
-def get_media_path(file_path):
-    """
-    获取媒体文件的完整路径
-
-    Args:
-        file_path: 相对于FILE_ROOT的文件路径
-
-    Returns:
-        str: 文件的完整路径
-
-    Raises:
-        FileNotFoundError: 文件不存在或不是有效的媒体文件
-        ValueError: 路径参数无效
-    """
+def get_media_path(file_path) -> str:
+    """修复Windows系统路径处理，正确解析包含..\的相对路径，支持processed目录访问"""
     try:
         if not file_path:
             raise ValueError("文件路径不能为空")
 
-        # 如果已经是绝对路径，验证后直接返回
-        if os.path.isabs(file_path):
-            if not os.path.exists(file_path):
-                raise FileNotFoundError(f"文件不存在: {file_path}")
-            if not os.path.isfile(file_path):
-                raise FileNotFoundError(f"路径不是文件: {file_path}")
-            return file_path
+        # 1. 统一路径分隔符为Windows格式（处理前端可能传入的/）
+        file_path = file_path.replace('/', '\\')
 
-        # 构建完整路径
-        full_path = os.path.join(FILE_ROOT, file_path)
+        # 2. 解析路径中的..和.，得到标准化路径（关键修复）
+        normalized_path = os.path.normpath(file_path)
 
-        # 验证文件是否存在
+        # 3. 确定基础目录和完整路径
+        full_path = None
+
+        # 3.1 如果路径以 ..\processed\ 开头，特殊处理
+        if normalized_path.startswith('..\\processed\\'):
+            # 计算项目根目录（FILE_ROOT的父目录）
+            project_root = os.path.dirname(FILE_ROOT)
+            # 移除开头的 ..\ 并拼接到项目根目录
+            relative_path = normalized_path[3:]  # 移除 '..\'
+            full_path = os.path.join(project_root, relative_path)
+        # 3.2 如果路径以 processed\ 开头（已经是相对于项目根的路径）
+        elif normalized_path.startswith('processed\\'):
+            project_root = os.path.dirname(FILE_ROOT)
+            full_path = os.path.join(project_root, normalized_path)
+        # 3.3 普通情况：相对于FILE_ROOT的路径
+        else:
+            full_path = os.path.join(FILE_ROOT, normalized_path)
+
+        # 4. 转换为绝对路径，确保一致性
+        full_path = os.path.abspath(full_path)
+
+        # 5. 获取真实路径（解析符号链接等）
+        real_full_path = os.path.realpath(full_path)
+        real_file_root = os.path.realpath(FILE_ROOT)
+
+        # 计算processed目录的真实路径
+        project_root = os.path.dirname(FILE_ROOT)
+        processed_dir = os.path.join(project_root, 'processed')
+        real_processed_dir = os.path.realpath(processed_dir)
+
+        # 6. 安全校验：允许访问FILE_ROOT或processed目录
+        is_in_file_root = real_full_path.lower().startswith(real_file_root.lower())
+        is_in_processed = real_full_path.lower().startswith(real_processed_dir.lower())
+
+        if not (is_in_file_root or is_in_processed):
+            raise ValueError(f"不允许访问FILE_ROOT和processed目录外的文件: {file_path}")
+
+        # 7. 验证文件存在性和类型（保持不变）
         if not os.path.exists(full_path):
             raise FileNotFoundError(f"文件不存在: {file_path}")
-
-        # 验证是否为文件
         if not os.path.isfile(full_path):
             raise FileNotFoundError(f"路径不是文件: {file_path}")
-
-        # 验证是否为媒体文件
-        is_valid, _ = validate_media_type(full_path)
-        if not is_valid:
+        if not validate_media_type(full_path)[0]:
             raise FileNotFoundError(f"文件不是有效的媒体文件: {file_path}")
 
         return full_path
-
     except (FileNotFoundError, ValueError):
         raise
     except Exception as e:
@@ -446,22 +391,12 @@ def get_media_path(file_path):
         raise FileNotFoundError(f"获取媒体路径失败: {str(e)}")
 
 
-def get_file_url(file_path, base_url="/static/files"):
-    """
-    获取文件的URL路径（用于Web访问）
-
-    Args:
-        file_path: 相对于FILE_ROOT的文件路径
-        base_url: 基础URL路径
-
-    Returns:
-        str: 文件的URL路径
-    """
+def get_file_url(file_path, base_url="/static/files") -> Optional[str]:
+    """获取文件的URL路径（复用你原始代码，无需修改）"""
     try:
         if not file_path:
             return None
 
-        # 标准化路径分隔符为URL格式
         url_path = file_path.replace(os.path.sep, '/')
         return f"{base_url.rstrip('/')}/{url_path.lstrip('/')}"
     except Exception as e:
@@ -469,23 +404,13 @@ def get_file_url(file_path, base_url="/static/files"):
         return None
 
 
-def create_directory(dir_path):
-    """
-    创建目录（如果不存在）
-
-    Args:
-        dir_path: 要创建的目录路径（相对于FILE_ROOT）
-
-    Returns:
-        bool: 创建成功返回True，失败返回False
-    """
+def create_directory(dir_path) -> bool:
+    """创建目录（复用你原始代码，无需修改）"""
     try:
         if not dir_path:
             return False
 
         full_path = os.path.join(FILE_ROOT, dir_path)
-
-        # 安全检查：确保路径在FILE_ROOT内
         real_dir_path = os.path.realpath(full_path)
         real_file_root = os.path.realpath(FILE_ROOT)
 
@@ -500,25 +425,14 @@ def create_directory(dir_path):
         return False
 
 
-def move_file(src_path, dest_path):
-    """
-    移动文件
-
-    Args:
-        src_path: 源文件路径（相对于FILE_ROOT）
-        dest_path: 目标文件路径（相对于FILE_ROOT）
-
-    Returns:
-        bool: 移动成功返回True，失败返回False
-    """
+def move_file(src_path, dest_path) -> bool:
+    """移动文件（复用你原始代码，无需修改）"""
     try:
         if not src_path or not dest_path:
             return False
 
         src_full_path = os.path.join(FILE_ROOT, src_path)
         dest_full_path = os.path.join(FILE_ROOT, dest_path)
-
-        # 安全检查
         real_src_path = os.path.realpath(src_full_path)
         real_dest_path = os.path.realpath(dest_full_path)
         real_file_root = os.path.realpath(FILE_ROOT)
@@ -530,11 +444,9 @@ def move_file(src_path, dest_path):
         if not os.path.exists(src_full_path):
             return False
 
-        # 确保目标目录存在
         dest_dir = os.path.dirname(dest_full_path)
         os.makedirs(dest_dir, exist_ok=True)
 
-        # 移动文件
         os.rename(src_full_path, dest_full_path)
         return True
     except Exception as e:
@@ -542,17 +454,8 @@ def move_file(src_path, dest_path):
         return False
 
 
-def copy_file(src_path, dest_path):
-    """
-    复制文件
-
-    Args:
-        src_path: 源文件路径（相对于FILE_ROOT）
-        dest_path: 目标文件路径（相对于FILE_ROOT）
-
-    Returns:
-        bool: 复制成功返回True，失败返回False
-    """
+def copy_file(src_path, dest_path) -> bool:
+    """复制文件（复用你原始代码，无需修改）"""
     try:
         import shutil
 
@@ -561,8 +464,6 @@ def copy_file(src_path, dest_path):
 
         src_full_path = os.path.join(FILE_ROOT, src_path)
         dest_full_path = os.path.join(FILE_ROOT, dest_path)
-
-        # 安全检查
         real_src_path = os.path.realpath(src_full_path)
         real_dest_path = os.path.realpath(dest_full_path)
         real_file_root = os.path.realpath(FILE_ROOT)
@@ -574,11 +475,9 @@ def copy_file(src_path, dest_path):
         if not os.path.exists(src_full_path):
             return False
 
-        # 确保目标目录存在
         dest_dir = os.path.dirname(dest_full_path)
         os.makedirs(dest_dir, exist_ok=True)
 
-        # 复制文件
         shutil.copy2(src_full_path, dest_full_path)
         return True
     except Exception as e:
@@ -586,17 +485,8 @@ def copy_file(src_path, dest_path):
         return False
 
 
-def cleanup_old_files(directory_path, days_old=30):
-    """
-    清理指定天数前的旧文件
-
-    Args:
-        directory_path: 目录路径
-        days_old: 文件保留天数，默认30天
-
-    Returns:
-        tuple: (删除的文件数量, 释放的空间大小)
-    """
+def cleanup_old_files(directory_path, days_old=30) -> Tuple[int, int]:
+    """清理指定天数前的旧文件（复用你原始代码，无需修改）"""
     try:
         import time
 
